@@ -1,0 +1,278 @@
+#+TITLE:     Dokumentation zur Befreiung und Visualisierung der ZAMG Klimadaten von 1971-2000
+#+AUTHOR:    Chris Raschl (@kautsig), Stefan Kasberger (@stefankasberger)
+#+DATE:      2012-04-20 Fre
+#+DESCRIPTION:
+#+KEYWORDS:
+#+LANGUAGE:  de
+
+* ANFORDERUNGEN
+Es sollen die HTML Seiten der Klimastationen auf der ZAMG Website[fn:zamg] automatisch ausgelesen
+und in CSV Dateien gespeichert werden. Aus den so gewonnenen Daten sollen Walter-Lieth Diagramme
+erstellt und über eine Webapplikation zugänglich gemacht werden.
+
+[fn:zamg] http://www.zamg.ac.at/fix/klima/oe71-00/klima2000/klimadaten\_oesterreich\_1971\_frame1.htm
+
+Folgende Aktionen sind dazu notwendig
+- Extraktion der Daten URLs aus dem ZAMG Menü
+- Download der Daten URLs
+- Extraktion aller Daten in gleich strukturierte CSV Dateien
+- Umwandlung der CSV Dateien in in R einfach lesbare Dateien
+- Erstellung der Walter Lieht Diagramme inkl. Postprocessing (Einfügen von Lizenzinformationen)
+- Umwandlung der Wetterstationsübersicht ins JSON Format
+- Erstellen des Dataset Packages
+- Kopieren der JSON Datei, der Diagrammdiagramme und des Dataset Packages in die Visualisierung
+** Erzeugen der URL Dateien
+
+Aus der Navigation auf der ZAMG Website wird eine Liste
+von Urls extrahiert in der die HTML Files welche die Daten
+beinhalten zu finden sind.
+
+Nach dem Aufruf von ./fetch\_urls.py sind 2 neue Dateien vorhanden:
+
+- urls-data.txt - Enthält die Urls der Seiten mit den eigentlichen Klimadaten
+- urls-measures.txt - Enthält Urls zu Seiten mit Metainformation zu den Klimadaten (Anzahl der gemessenen Werte)
+
+Da auf der ZAMG Website auch Urls in der Navigation vorhanden
+sind welche zum Menü etc. führen müssen diese manuell aus den
+Url-Listen entfernt werden. Diese sind jedoch einfach zu erkennen,
+da sie nicht der üblichen Namenskonvention folgen.
+
+** Download der HTML Dateien
+
+Beim Aufruf von ./fetch\_html.sh werden die HTML Dateien mittels
+wget vom Server geladen. Das kann einige Zeit in Anspruch nehmen,
+da um die Serverlast gering zu halten eine Pause von 5 Sek. zwischen
+den Requests gemacht wird.
+
+** Extraktion der Daten in CSV Dateien
+
+Nachdem der Download abgeschlossen ist muss der Zielordner, für die
+Extraktion der Daten in das CSV Format, angelegt und das Konvertieren
+gestartet werden.
+
+#+begin_src bash
+mkdir data/csv
+./extract_data.py
+#+end_src
+
+Nach dem vollständigem Durchlauf des Scripts sind im Ordner data/csv
+sämtliche daten vorhanden. Benannt sind sie nach folgendem Namensschema:
+
+<bundesland>\_<stationsid>\_<index>\_<content-description>.csv
+
+z.B:
+- wie\_5925\_1\_temperature.csv
+- wie\_5925\_2\_special\_days.csv
+- wie\_5925\_3\_precipitation.csv
+- wie\_5925\_4\_sun.csv
+- wie\_5925\_5\_atmospheric\_humidity.csv
+- wie\_5925\_6\_snow\_hail\_storm.csv
+- wie\_5925\_7\_wind.csv
+- wie\_5925\_8\_wind\_direction.csv
+- wie\_5925\_0\_measures.csv
+
+Zusätzlich ist eine Liste von Wetterstation im metadata.csv vorhanden.
+
+# Beschreibung des Formates der CSV Dateien
+
+In den CSV Dateien mit Index 1-8 befinden sich Monatsdaten in Spalten
+angeordnet, und eine zusätzliche Summenspalte. Die erste Zeile ist der
+Header mit den Spaltenbezeichnungen Jan-Dez und Jahr.
+
+Die Beschreibung des Datenformats wurde von einer Wetterstationsseite[fn:station] exemplarisch
+übernommen.
+
+[fn:station] http://www.zamg.ac.at/fix/klima/oe71-00/klima2000/daten/klimadaten/noe/3510.htm
+
+*** Temperatur, *\_1\_temperature.csv
+
+#+ATTR_LaTeX: longtable align=lllp{0.4\textwidth}
+| Wert  | Einheit | Element                   | Definition                                                           |
+|-------+---------+---------------------------+----------------------------------------------------------------------|
+| t     | °C      | Tagesmittel               | (7 Uhr Mittel + 19 Uhr Mittel + mittl. Maximum + mittl. Minimum) / 4 |
+| mtmax | °C      | Mittel aller tägl. Maxima | Summe tägl. Maxima / Anzahl der Tage                                 |
+| mtmin | °C      | Mittel aller tägl. Minima | Summe tägl. Minima / Anzahl der Tage                                 |
+| tmax  | °C      | absolutes Maximum         | größtes Tagesmaximum                                                 |
+| tmin  | °C      | absolutes Minimum         | kleinstes Tagesminimum                                               |
+
+*** Besondere Tage, *\_2\_special\_days.csv
+
+#+ATTR_LaTeX: longtable align=lllp{0.4\textwidth}
+| Wert   | Einheit | Element                   | Definition                                                     |
+|--------+---------+---------------------------+----------------------------------------------------------------|
+| frost  | Tag     | Zahl der Frosttage        | Summe der Tage mit Temperaturtagesminimum < 0,0 °C             |
+| eis    | Tag     | Zahl der Eistage          | Summe der Tage mit Temperaturtagesmaximum < 0,0 °C             |
+| som    | Tag     | Zahl der Sommertage       | Summe der Tage mit Temperaturtagesmaximum ≥ 25,0 °C            |
+| heisse | Tag     | Zahl der Heißen Tage      | Summe der Tage mit Temperaturtagesmaximum ≥ 30,0 °C            |
+| ht     | Tag     | Anzahl der Heiztage 20/12 | Summe der Tage mit Temperaturtagesmittel < 12,0 °C             |
+| gradt  | °C      | Gradtagszahl 20/12        | Kenngröße für Heizenergiebedarf (siehe Beschreibung der Daten) |
+
+*** Niederschlag, *\_3\_precipitation.csv
+
+#+ATTR_LaTeX: longtable align=lllp{0.4\textwidth}
+| Wert | Einheit | Element                   | Definition                                   |
+|------+---------+---------------------------+----------------------------------------------|
+| rsum | l/m²    | Niederschlagssumme        | Mittlere Monatssumme des Niederschlags       |
+| rmax | l/m²    | Größter Tagesniederschlag | Größte Niederschlagssumme in 24 Stunden      |
+| n1   | Tag     | Niederschlag ≥ 1 mm       | Zahl der Tage mit Niederschlagssumme ≥ 1 mm  |
+| n10  | Tag     | Niederschlag ≥ 10 mm      | Zahl der Tage mit Niederschlagssumme ≥ 10 mm |
+
+*** Sonne, *\_4\_sun.csv
+
+#+ATTR_LaTeX: longtable align=lllp{0.4\textwidth}
+| Wert   | Einheit | Element                    | Definition                                                 |
+|--------+---------+----------------------------+------------------------------------------------------------|
+| s      | Stunde  | Monatssumme                | Summe aller Stunden mit Sonnenschein                       |
+| sp     | %       | relative Sonnenscheindauer | Prozent der am Messort maximal möglichen Sonnenscheindauer |
+| sonn0  | Tag     | Sonnenscheindauer = 0      | Zahl der Tage mit Sonnenscheindauer = 0 Stunden            |
+| sonn5  | Tag     | Sonnenscheindauer ≥ 5      | Zahl der Tage mit Sonnenscheindauer ≥ 5 Stunden            |
+| global | J/cm²   | Globalstrahlung            | Monatssumme der Globalstrahlung                            |
+| heiter | Tag     | heitere Tage               | Zahl der Tage mit einem Bewölkungsmittel < 20 %            |
+| trueb  | Tag     | trübe Tage                 | Zahl der Tage mit einem Bewölkungsmittel > 80 %            |
+
+*** Luftfeuchtigkeit, *\_5\_humidity.csv
+
+#+ATTR_LaTeX: longtable align=lllp{0.4\textwidth}
+| Wert  | Einheit | Element          | Definition                                                 |
+|-------+---------+------------------+------------------------------------------------------------|
+| e     | hPa     | Dampfdruckmittel | Mittel aller 7, 14, 19 Uhr Termine                         |
+| rel7  | %       | 7 Uhr Mittel     | Mittel der relativen Luftfeuchtigkeit aller 7 Uhr Termine  |
+| rel14 | %       | 14 Uhr Mittel    | Mittel der relativen Luftfeuchtigkeit aller 14 Uhr Termine |
+
+*** Schnee, Hagel, Gewitter, *\_6\_snow\_hail\_storm.csv
+
+#+ATTR_LaTeX: longtable align=lllp{0.4\textwidth}
+| Wert   | Einheit | Element            | Definition                            |
+|--------+---------+--------------------+---------------------------------------|
+| nsch   | cm      | Neuschneemenge     | Summe der Neuschneemenge              |
+| schmax | cm      | Schneedecke        | Maximale Schneedecke in cm            |
+| sch1   | Tag     | Schnee ≥ 1 cm      | Zahl der Tage mit Schneedecke ≥ 1 cm  |
+| sch20  | Tag     | Schnee ≥ 20 cm     | Zahl der Tage mit Schneedecke ≥ 20 cm |
+| hagel  | Tag     | Hagel oder Graupel | Zahl der Tage mit Hagel oder Graupel  |
+| gew    | Tag     | Gewitter           | Zahl der Tage mit Gewitter            |
+
+*** Wind, *\_7\_wind.csv
+
+#+ATTR_LaTeX: longtable align=lllp{0.4\textwidth}
+| Wert | Einheit | Element             | Definition                                |
+|------+---------+---------------------+-------------------------------------------|
+| vv   | m/s     | Windgeschwindigkeit | Monatsmittel der Windgeschwindigkeit      |
+| w6   | Tag     | Windstärke ≥ 6 Bft  | Zahl der Tage mit Windstärke ≥ 6 Beaufort |
+| w8   | Tag     | Windstärke ≥ 8 Bft  | Zahl der Tage mit Windstärke ≥ 8 Beaufort |
+
+*** Windrichtung, *\_8\_winddirection.csv
+
+#+ATTR_LaTeX: longtable align=lllp{0.4\textwidth}
+| Wert  | Einheit | Element      | Definition                               |
+|-------+---------+--------------+------------------------------------------|
+| N,... | %       | Windrichtung | prozentueller Anteil nach Windrichtungen |
+| C     | %       | Calme        | Windgeschwindigkeit < 0,5 m/s            |
+
+*** Anzahl der vollständigen Monate, *\_0\_measures.csv
+
+Enthält eine Tabelle mit der Anzahl der vollständig vorhandenen Monate für
+die einzelene Messwerte im Zeitraum 1971-2000.
+
+** Umwandlung in CSV Dateien zur Erzeugung der Walter Lieth Diagramme in R
+
+Zur leichteren Verarbeitung mit R wurde ein Python Script entwickelt um
+die benötigten Daten in für R geeignete CSV-Dateien zu schreiben.
+
+#+begin_src bash
+mkdir data/rstat
+./convert_to_r.py
+#+end_src
+
+** Erstellung der Walter Lieth Diagramme inkl. Postprocessing
+
+Um die Klimadiagramme zu erzeugen muss das Climatol Package
+installiert werden. Auf Debian basierten Systemen ist diese Abhängigkeit
+nicht via apt-get verfügbar, das Paket muss manuell installiert werden:
+
+#+begin_src bash
+wget http://cran.at.r-project.org/src/contrib/climatol_2.1.tar.gz
+sudo R CMD INSTALL climatol_2.1.tar.gz
+#+end_src
+
+Danach kann das R Script ausgeführt werden, die Diagramme werden im
+data/r Verzeichnis im svg Format abgelegt.
+
+#+begin_src bash
+R -f create_wl_diagram.r
+#+end_src
+
+Danach muss noch die Lizenz eingefügt und ein PNG erstellt werden.
+
+#+begin_src bash
+./create_wl_png.sh
+#+end_src
+
+** Erstellung des metadata.json für die Map Übersicht
+
+Um alle Wetterstationen auf einer Map einzuzeichnen muss in für Javascript
+taugliches Format umgewandelt werden.
+
+#+begin_src bash
+mkdir data/json
+./convert_to_json.py
+#+end_src
+
+** Erstellung des Dataset Packages
+
+Um die Diagramme und CSV Dateien mittels einem einzigem Download
+herunterzuladen wird ein Tarball mit den Daten erstellt.
+
+Inhalt des Datenpackets:
+- Klima Diagramme als PNG und SVG
+- CSVs Stationen
+- CSV Metadaten
+- metadaten JSON
+- CSVs R WL diagram
+
+
+#+begin_src bash
+./create_dataset_tar.sh
+#+end_src bash
+
+** Zusammenstellen der Daten für das Webinterface
+
+Das Webinterface ist im visu Ordner enthalten. Nun müssen die benötigen im
+Prozess erstellten Dateien noch ins Interface kopiert werden.
+
+hierzu die datei prepare_www.sh ausführen
+
+** Web Oberfläche
+** Öffnen der Applikation im Browser
+
+Die Erstellung ist nun komplett, die Applikation kann nun im Browser geöffnet werden.
+
+#+begin_src bash
+firefox www/index.html
+#+end_src
+
+* UMSETZUNG
+** 0.1
+# tasks
+- fix json creation: eine datenstruktur übelegen
+*** DOCUMENTATION
+- Qualitätssicherung: fetch_urls.py und fetch_html.sh und extract_data.py
+*** LATER
+- add cc by-nc bild zu svg datei
+- erstellen eines zentralen shell files woraus alle anderen scripts aufgerufen werden
+- add copyright text mit Bild in R
+- alles in python machen
+- alles in org-mode file machen
+- all data to json and add to data-package tarball
+- add licenses automatically
+- add geojson
+- make it semantic
+- control wl diagrams: geo data, etc,
+- check licenses.txt für alle anwendungen: jQUery, leaflet, etc
+- save processing in a log => extract_data.py, fetch_html.sh, andere?
+
+** 0.2
+** 0.3
+** 0.4
+** 0.5
+** 0.6
+** 1.0
